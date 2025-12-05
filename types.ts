@@ -48,6 +48,15 @@ export type SortOrder = 'asc' | 'desc';
 export type LibraryLayout = 'grid' | 'list';
 export type ReadingMode = 'spritz' | 'scroll' | 'paginated' | 'wheel' | 'tiktok';
 
+export interface KeyBindings {
+  next: string;
+  prev: string;
+  speedUp: string;
+  speedDown: string;
+  resetSpeed: string;
+  playPause: string;
+}
+
 export interface AppSettings {
   // Global
   theme: 'light' | 'dark' | 'sepia';
@@ -127,6 +136,12 @@ export interface AppSettings {
   pauseAudioOnGlossary: boolean; // New: Pause audio when dictionary opens
   resumeFromSentenceStart: boolean; // New: Resume audio from start of sentence
   sidebarShowAllDefinitions: boolean; // New: Show all highlighted words or only visible ones
+
+  // Keyboard Shortcuts
+  keySeekGranularity: 'line' | 'sentence' | 'paragraph';
+  keySpeedStep: number;
+  keyDefaultSpeed: number;
+  keyBindings: KeyBindings;
 }
 
 export interface VoiceSettings {

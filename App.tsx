@@ -1,4 +1,8 @@
 
+
+
+
+
 import React, { useEffect, useState, useRef } from 'react';
 import { Settings } from 'lucide-react';
 import { Library } from './components/Library';
@@ -53,6 +57,14 @@ const App: React.FC = () => {
         // We prioritize existing 'spritzWpm', then fallback to legacy 'wpm', then default
         spritzWpm: savedApp.spritzWpm ?? savedApp.wpm ?? DEFAULT_SETTINGS.spritzWpm,
         spritzFontSize: savedApp.spritzFontSize ?? savedApp.fontSize ?? DEFAULT_SETTINGS.spritzFontSize,
+        
+        // Ensure new keyBindings are merged with existing ones
+        keyBindings: {
+            ...DEFAULT_SETTINGS.keyBindings,
+            ...(savedApp.keyBindings || {})
+        },
+        // Ensure keyDefaultSpeed exists
+        keyDefaultSpeed: savedApp.keyDefaultSpeed ?? DEFAULT_SETTINGS.keyDefaultSpeed
       };
     }
 

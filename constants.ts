@@ -16,6 +16,13 @@
 
 
 
+
+
+
+
+
+
+
 import { AppSettings, VoiceSettings } from './types';
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -95,6 +102,19 @@ export const DEFAULT_SETTINGS: AppSettings = {
   pauseAudioOnGlossary: true, // Default to true
   resumeFromSentenceStart: true, // Default to true
   sidebarShowAllDefinitions: false, // Default to showing only visible
+
+  // Keyboard Defaults
+  keySeekGranularity: 'paragraph', // Default to paragraph as requested
+  keySpeedStep: 0.1, // Default step 0.1
+  keyDefaultSpeed: 1.3, // New default speed
+  keyBindings: {
+    next: 'ArrowRight',
+    prev: 'ArrowLeft',
+    speedUp: '3', // Changed default
+    speedDown: '2', // Changed default
+    resetSpeed: '4', // New default
+    playPause: ' '
+  }
 };
 
 export const DEFAULT_VOICE_SETTINGS: VoiceSettings = {
@@ -104,8 +124,8 @@ export const DEFAULT_VOICE_SETTINGS: VoiceSettings = {
   tiktokEnabled: true,
   voiceURI: null,
   pitch: 1,
-  rate: 2, // 2 is fast speed
-  favorites: ['EmmaMultiLingual', 'Microsoft Emma Multilingual Online (Natural)'], // Added default favorites
+  rate: 1.3, // Changed default to 1.3
+  favorites: ['Microsoft Michele Online (Natural)', 'EmmaMultiLingual', 'Microsoft Emma Multilingual Online (Natural)'], // Added Michele as first favorite
   repeatMode: 'off',
 };
 

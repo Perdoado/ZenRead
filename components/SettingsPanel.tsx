@@ -1,6 +1,10 @@
+
+
+
+
 import React, { useEffect, useState } from 'react';
-import { X, Star, Volume2, Type, Eye, Zap, BookOpen, AlignLeft, AlignJustify, Bold, Italic, Scroll, Book, Maximize2, Move, Clock, ChevronsDown, Timer, AlignJustifyIcon, Layout, Columns, Sidebar, BookOpenText, Disc, Repeat, Activity, Layers, Grid, Target, ArrowDown, AlignCenter, ArrowUp, Square, RotateCcw, Crosshair, BoxSelect, Database, Upload, Download } from 'lucide-react';
-import { AppSettings, VoiceSettings, ReadingMode } from '../types';
+import { X, Star, Volume2, Type, Eye, Zap, BookOpen, AlignLeft, AlignJustify, Bold, Italic, Scroll, Book, Maximize2, Move, Clock, ChevronsDown, Timer, AlignJustifyIcon, Layout, Columns, Sidebar, BookOpenText, Disc, Repeat, Activity, Layers, Grid, Target, ArrowDown, AlignCenter, ArrowUp, Square, RotateCcw, Crosshair, BoxSelect, Database, Upload, Download, Keyboard, ArrowLeft, ArrowRight } from 'lucide-react';
+import { AppSettings, VoiceSettings, ReadingMode, KeyBindings } from '../types';
 import { exportBackup, importBackup } from '../services/storage';
 
 interface SettingsPanelProps {
@@ -20,6 +24,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
   const [voiceSearch, setVoiceSearch] = useState('');
   const [configTab, setConfigTab] = useState<ReadingMode>(activeMode || 'spritz');
   const [isBackupLoading, setIsBackupLoading] = useState(false);
+  const [listeningForKey, setListeningForKey] = useState<keyof KeyBindings | null>(null);
 
   useEffect(() => {
     if (activeMode) setConfigTab(activeMode);
@@ -33,6 +38,29 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
     loadVoices();
     window.speechSynthesis.onvoiceschanged = loadVoices;
   }, []);
+  
+  // Key Binder Listener
+  useEffect(() => {
+      if (!listeningForKey) return;
+      const handler = (e: KeyboardEvent) => {
+          e.preventDefault();
+          e.stopPropagation();
+          
+          let newKey = e.key;
+          if (newKey === ' ') newKey = ' '; // normalize space if needed, though ' ' is standard
+
+          onSettingsChange({
+              ...settings,
+              keyBindings: {
+                  ...settings.keyBindings,
+                  [listeningForKey]: newKey
+              }
+          });
+          setListeningForKey(null);
+      };
+      window.addEventListener('keydown', handler);
+      return () => window.removeEventListener('keydown', handler);
+  }, [listeningForKey, settings, onSettingsChange]);
 
   if (!isOpen) return null;
 
@@ -623,7 +651,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                                 <input 
                                     type="range" min="400" max="1200" step="50"
                                     value={settings.normalMaxWidth}
-                                    onChange={(e) => onSettingsChange({...settings, normalMaxWidth: Number(e.target.value)})}
+                                    onChange={(e) => onSettingsChange({...settings, normalMaxWidth: Number(e.target.value) })}
                                     className="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-600"
                                 />
                             </div>
@@ -723,6 +751,115 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                   </div>
               )}
             </div>
+          </section>
+
+          <SectionHeader title="Keyboard & Shortcuts" icon={Keyboard} />
+
+          <section className="mb-10">
+              <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-5">
+                  {/* Seek Granularity */}
+                  <div>
+                      <div className="flex items-center gap-2 mb-3">
+                          <span className="font-bold text-sm text-slate-700">Seek Behavior (Arrow Left/Right)</span>
+                      </div>
+                      <div className="flex bg-white rounded-lg border border-slate-200 p-1">
+                          <button
+                              onClick={() => onSettingsChange({...settings, keySeekGranularity: 'line'})}
+                              className={`flex-1 flex items-center justify-center gap-2 py-1.5 text-xs font-medium rounded ${settings.keySeekGranularity === 'line' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-500 hover:text-slate-700'}`}
+                          >
+                              <AlignJustify className="w-3 h-3" /> Line
+                          </button>
+                          <button
+                              onClick={() => onSettingsChange({...settings, keySeekGranularity: 'sentence'})}
+                              className={`flex-1 flex items-center justify-center gap-2 py-1.5 text-xs font-medium rounded ${settings.keySeekGranularity === 'sentence' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-500 hover:text-slate-700'}`}
+                          >
+                              <BookOpen className="w-3 h-3" /> Sentence
+                          </button>
+                          <button
+                              onClick={() => onSettingsChange({...settings, keySeekGranularity: 'paragraph'})}
+                              className={`flex-1 flex items-center justify-center gap-2 py-1.5 text-xs font-medium rounded ${(settings.keySeekGranularity || 'paragraph') === 'paragraph' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-500 hover:text-slate-700'}`}
+                          >
+                              <AlignLeft className="w-3 h-3" /> Paragraph
+                          </button>
+                      </div>
+                      <p className="text-[10px] text-slate-500 mt-2">
+                        Controls how far the cursor moves when pressing Left or Right arrow keys during playback.
+                      </p>
+                  </div>
+
+                  {/* Speed Step */}
+                  <div>
+                      <div className="flex justify-between items-center mb-2">
+                          <label className="font-bold text-sm text-slate-700">Speed Change Step</label>
+                          <span className="text-xs font-mono bg-slate-200 px-1.5 rounded">+/- {settings.keySpeedStep || 0.1}x</span>
+                      </div>
+                      <input 
+                          type="range" 
+                          min="0.05" 
+                          max="0.5" 
+                          step="0.05"
+                          value={settings.keySpeedStep || 0.1} 
+                          onChange={(e) => onSettingsChange({ ...settings, keySpeedStep: Number(e.target.value) })}
+                          className="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                      />
+                  </div>
+                  
+                  {/* Default Speed */}
+                  <div>
+                      <div className="flex justify-between items-center mb-2">
+                          <label className="font-bold text-sm text-slate-700">Default Speed (Reset Target)</label>
+                          <span className="text-xs font-mono bg-slate-200 px-1.5 rounded">{settings.keyDefaultSpeed || 1.3}x</span>
+                      </div>
+                      <input 
+                          type="range" 
+                          min="0.5" 
+                          max="3.0" 
+                          step="0.1"
+                          value={settings.keyDefaultSpeed || 1.3} 
+                          onChange={(e) => onSettingsChange({ ...settings, keyDefaultSpeed: Number(e.target.value) })}
+                          className="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                      />
+                  </div>
+
+                   {/* Key Bindings */}
+                   <div className="pt-4 border-t border-slate-100">
+                       <h4 className="font-bold text-sm text-slate-700 mb-3">Key Bindings</h4>
+                       <div className="space-y-2">
+                           {[
+                               { id: 'next', label: 'Navigate Forward' },
+                               { id: 'prev', label: 'Navigate Backward' },
+                               { id: 'speedUp', label: 'Increase Speed' },
+                               { id: 'speedDown', label: 'Decrease Speed' },
+                               { id: 'resetSpeed', label: 'Reset Speed' },
+                               { id: 'playPause', label: 'Play / Pause' }
+                           ].map(item => {
+                               const keyId = item.id as keyof KeyBindings;
+                               const currentKey = settings.keyBindings?.[keyId] || '';
+                               const isListening = listeningForKey === keyId;
+                               
+                               return (
+                                   <div key={keyId} className="flex items-center justify-between">
+                                       <span className="text-xs text-slate-600 font-medium">{item.label}</span>
+                                       <button 
+                                            onClick={() => setListeningForKey(keyId)}
+                                            className={`
+                                                min-w-[80px] px-3 py-1.5 rounded text-xs font-mono font-bold border transition-all text-center
+                                                ${isListening 
+                                                    ? 'bg-red-50 text-red-600 border-red-200 ring-2 ring-red-100 animate-pulse' 
+                                                    : 'bg-white text-slate-700 border-slate-200 hover:border-indigo-300 hover:text-indigo-600'}
+                                            `}
+                                       >
+                                           {isListening ? 'Press Key...' : (currentKey === ' ' ? 'Space' : currentKey)}
+                                       </button>
+                                   </div>
+                               );
+                           })}
+                       </div>
+                       <p className="text-[10px] text-slate-400 mt-3 italic">
+                           Click a button and press any key to rebind.
+                       </p>
+                   </div>
+              </div>
           </section>
 
           <SectionHeader title="Voice & TTS" icon={Volume2} />

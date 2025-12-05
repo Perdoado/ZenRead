@@ -3,7 +3,7 @@ import {
   Play, Pause, ArrowLeft, Settings, RotateCcw, RotateCw, ChevronDown, Highlighter, Edit3, X, Type, Check, Mic, Star, Search, ArrowUp, ArrowDown, Target, Sidebar, ChevronLeft, ChevronRight, BookOpen, Lock, Unlock, Zap, Gauge, TrendingUp, TrendingDown, Timer, Eye, List
 } from 'lucide-react';
 import { Book, AppSettings, VoiceSettings, SpritzWord, ReadingMode, GlossaryItem, Chapter } from '../types';
-import { THEMES } from '../constants';
+import { THEMES, DEFAULT_SETTINGS } from '../constants';
 import { DictionaryCard } from './DictionaryCard';
 import { getDefinition, DictionaryResult } from '../services/geminiService';
 import { saveSettings } from '../services/storage';
@@ -95,6 +95,16 @@ const getSentenceRange = (words: string[], currentIndex: number) => {
     }
     return { start, end };
 };
+
+const getParagraphRange = (words: string[], currentIndex: number) => {
+    let start = currentIndex;
+    let end = currentIndex;
+    // Walk back to \n or 0
+    while (start > 0 && words[start - 1] !== '\n') start--;
+    // Walk forward to \n or length
+    while (end < words.length - 1 && words[end] !== '\n') end++;
+    return { start, end };
+}
 
 const getNextLargeChunk = (words: string[], startIndex: number) => {
     const TARGET_SIZE = 4000; 
@@ -517,6 +527,10 @@ export const Reader: React.FC<ReaderProps> = ({
         if (specificEmma && !voiceSettings.favorites.includes(specificEmma.voiceURI)) {
              onUpdateVoiceSettings({ ...voiceSettings, favorites: [...voiceSettings.favorites, specificEmma.voiceURI] });
         }
+        const specificMichele = voices.find(v => v.name.includes("Michele") && v.name.includes("Online"));
+        if (specificMichele && !voiceSettings.favorites.includes(specificMichele.voiceURI)) {
+             onUpdateVoiceSettings({ ...voiceSettings, favorites: [specificMichele.voiceURI, ...voiceSettings.favorites] });
+        }
     };
     load();
     window.speechSynthesis.onvoiceschanged = load;
@@ -778,23 +792,42 @@ export const Reader: React.FC<ReaderProps> = ({
     else { changePage(-1); lastWheelTimeRef.current = now; }
   }, [mode, changePage]);
 
-  // NEW: Navigate Sentence Logic
-  const navigateBySentence = useCallback((direction: 1 | -1) => {
+  // Navigate Unit Logic (Line, Sentence, Paragraph)
+  const navigateByUnit = useCallback((direction: 1 | -1) => {
       setBrowserWindowStart(null); // Clear browse mode
-      const range = getSentenceRange(wordsRef.current, currentIndex);
+      
+      const granularity = settings.keySeekGranularity || 'paragraph';
       let newIndex = currentIndex;
 
-      if (direction === 1) {
-          // Go to start of next sentence
-          newIndex = Math.min(wordsRef.current.length - 1, range.end + 1);
-      } else {
-          // If we are deep into the current sentence, go to its start
-          if (currentIndex > range.start + 2) {
-              newIndex = range.start;
+      if (granularity === 'paragraph') {
+          const range = getParagraphRange(wordsRef.current, currentIndex);
+          if (direction === 1) {
+              newIndex = Math.min(wordsRef.current.length - 1, range.end + 1);
           } else {
-              // Otherwise go to start of previous sentence
-              const prevRange = getSentenceRange(wordsRef.current, Math.max(0, range.start - 2));
-              newIndex = prevRange.start;
+              if (currentIndex > range.start + 5) { // 5 words tolerance to go to start of current
+                  newIndex = range.start;
+              } else {
+                  // Previous paragraph
+                  const prevRange = getParagraphRange(wordsRef.current, Math.max(0, range.start - 5));
+                  newIndex = prevRange.start;
+              }
+          }
+      } else if (granularity === 'line') {
+          // Line mode: Jump fixed amount (e.g. 15 words) as text is reflowed
+          const JUMP_SIZE = 15;
+          newIndex = Math.max(0, Math.min(wordsRef.current.length - 1, currentIndex + (direction * JUMP_SIZE)));
+      } else {
+          // Sentence mode (Default old behavior)
+          const range = getSentenceRange(wordsRef.current, currentIndex);
+          if (direction === 1) {
+              newIndex = Math.min(wordsRef.current.length - 1, range.end + 1);
+          } else {
+              if (currentIndex > range.start + 2) {
+                  newIndex = range.start;
+              } else {
+                  const prevRange = getSentenceRange(wordsRef.current, Math.max(0, range.start - 2));
+                  newIndex = prevRange.start;
+              }
           }
       }
 
@@ -807,11 +840,13 @@ export const Reader: React.FC<ReaderProps> = ({
           setTimeout(() => speakText(newIndex), 10);
       }
       if (mode === 'scroll') setTimeout(scrollToActiveWord, 100);
-  }, [currentIndex, isPlaying, mode, wordsRef.current]);
+  }, [currentIndex, isPlaying, mode, wordsRef.current, settings.keySeekGranularity]);
 
   // NEW: Speed Change Logic
   const handleSpeedChange = useCallback((direction: 1 | -1) => {
       // Determine which setting to change based on mode
+      const step = settings.keySpeedStep || 0.1;
+
       if (mode === 'spritz' || mode === 'wheel' || mode === 'tiktok') {
           const currentWpm = settings.spritzWpm;
           const newWpm = Math.max(50, Math.min(1000, currentWpm + (direction * 25)));
@@ -819,8 +854,7 @@ export const Reader: React.FC<ReaderProps> = ({
       } else {
           // Scroll or Paginated or Normal
           const currentRate = voiceSettings.rate;
-          // 0.1 increment
-          const newRate = Math.max(0.1, Math.min(4.0, parseFloat((currentRate + (direction * 0.1)).toFixed(1))));
+          const newRate = Math.max(0.1, Math.min(4.0, parseFloat((currentRate + (direction * step)).toFixed(2))));
           onUpdateVoiceSettings({ ...voiceSettings, rate: newRate });
       }
   }, [mode, settings, voiceSettings, onSettingsChange, onUpdateVoiceSettings]);
@@ -829,36 +863,47 @@ export const Reader: React.FC<ReaderProps> = ({
     const handleKeyDown = (e: KeyboardEvent) => {
         if (dictionaryOpen || sidebarSettingsOpen || voiceMenuOpen || speedMenuOpen || tocOpen) return;
         
-        // Global Play/Pause via Space
-        if (e.key === ' ' || e.code === 'Space') {
-            e.preventDefault();
+        const { keyBindings } = settings;
+        
+        // Use default keyBindings if not present (safety fallback for migration edge cases)
+        const bindings = keyBindings || DEFAULT_SETTINGS.keyBindings;
+
+        // Prevent default browser scrolling for mapped keys
+        if ([bindings.next, bindings.prev, bindings.speedUp, bindings.speedDown, bindings.playPause, bindings.resetSpeed].includes(e.key)) {
+             e.preventDefault();
+        }
+
+        if (e.key === bindings.playPause) { 
             togglePlay();
             return; 
         }
 
-        // New Navigation & Speed Controls
         switch (e.key) {
-            case 'ArrowLeft': 
-                e.preventDefault(); 
-                navigateBySentence(-1);
+            case bindings.prev: 
+                navigateByUnit(-1);
                 break;
-            case 'ArrowRight': 
-                e.preventDefault(); 
-                navigateBySentence(1); 
+            case bindings.next: 
+                navigateByUnit(1); 
                 break;
-            case 'ArrowUp':
-                e.preventDefault();
+            case bindings.speedUp:
                 handleSpeedChange(1);
                 break;
-            case 'ArrowDown':
-                e.preventDefault();
+            case bindings.speedDown:
                 handleSpeedChange(-1);
+                break;
+            case bindings.resetSpeed:
+                if (mode === 'spritz' || mode === 'wheel' || mode === 'tiktok') {
+                    // Option: Reset to default WPM if needed, but request focused on TTS rate. 
+                    // Let's stick to TTS rate resetting.
+                } else {
+                    onUpdateVoiceSettings({ ...voiceSettings, rate: settings.keyDefaultSpeed || 1.3 });
+                }
                 break;
         }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [mode, changePage, dictionaryOpen, sidebarSettingsOpen, voiceMenuOpen, speedMenuOpen, isPlaying, navigateBySentence, handleSpeedChange, tocOpen]);
+  }, [mode, changePage, dictionaryOpen, sidebarSettingsOpen, voiceMenuOpen, speedMenuOpen, isPlaying, navigateByUnit, handleSpeedChange, tocOpen, settings.keyBindings, settings.keyDefaultSpeed, voiceSettings]);
 
   const smoothScroll = useCallback((target: number, duration: number) => {
       const container = readerContainerRef.current;
@@ -1051,7 +1096,14 @@ export const Reader: React.FC<ReaderProps> = ({
           const voices = window.speechSynthesis.getVoices();
           let voice = null;
           if (currentSettings.voiceURI) voice = voices.find(v => v.voiceURI === currentSettings.voiceURI) || null;
-          if (!voice) voice = voices.find(v => v.name.includes('Emma')) || null;
+          
+          // Fallback to preferred voices if selected one is invalid
+          if (!voice) {
+               voice = voices.find(v => v.name.includes('Michele') && v.name.includes('Online')) || 
+                       voices.find(v => v.name.includes('Emma')) || 
+                       null;
+          }
+          
           if (voice) u.voice = voice;
           u.rate = currentSettings.rate;
           u.pitch = currentSettings.pitch;
@@ -2185,7 +2237,7 @@ export const Reader: React.FC<ReaderProps> = ({
                             <input 
                                 type="checkbox" 
                                 checked={tocAutoPlay} 
-                                onChange={(e) => setTocAutoPlay(e.target.checked)}
+                                onChange={(e) => setTocAutoPlay(e.target.value)}
                                 className="rounded text-indigo-600 focus:ring-indigo-500 w-4 h-4 cursor-pointer accent-indigo-600"
                             />
                             Auto-play
