@@ -107,19 +107,54 @@ const getParagraphRange = (words: string[], currentIndex: number) => {
 }
 
 const getNextLargeChunk = (words: string[], startIndex: number) => {
-    const TARGET_SIZE = 4000; 
+    // Increased to 1000 words to minimize audio pauses.
+    // Prioritizes ending at a paragraph break (\n) for smoother transitions.
+    const TARGET_SIZE = 1000; 
     let end = Math.min(words.length, startIndex + TARGET_SIZE);
     
     if (end < words.length) {
-        let lookback = end;
-        const limit = Math.max(startIndex, end - 500); 
-        while (lookback > limit) {
-             const w = words[lookback];
-             if (/[.!?]$/.test(w) || w === '\n') {
-                 end = lookback + 1;
-                 break;
-             }
-             lookback--;
+        let foundBreak = false;
+
+        // 1. Look forward for the nearest paragraph break
+        // We allow extending the chunk by up to 500 words to find a paragraph end.
+        let forwardLook = end;
+        const forwardLimit = Math.min(words.length, end + 500);
+        
+        while (forwardLook < forwardLimit) {
+            if (words[forwardLook] === '\n') {
+                end = forwardLook + 1;
+                foundBreak = true;
+                break;
+            }
+            forwardLook++;
+        }
+
+        // 2. If no forward paragraph break found, look backward from the 1000 word mark.
+        if (!foundBreak) {
+            let backwardLook = end;
+            const backwardLimit = Math.max(startIndex + 200, end - 500); 
+            while (backwardLook > backwardLimit) {
+                if (words[backwardLook] === '\n') {
+                    end = backwardLook + 1;
+                    foundBreak = true;
+                    break;
+                }
+                backwardLook--;
+            }
+        }
+
+        // 3. Fallback: Find a sentence break if paragraph detection fails (e.g. extremely long paragraphs)
+        if (!foundBreak) {
+            let lookback = Math.min(words.length, startIndex + TARGET_SIZE);
+            const sentenceLimit = Math.max(startIndex, lookback - 200); 
+            while (lookback > sentenceLimit) {
+                 const w = words[lookback];
+                 if (/[.!?]['"]?$/.test(w)) {
+                     end = lookback + 1;
+                     break;
+                 }
+                 lookback--;
+            }
         }
     }
     
@@ -466,6 +501,22 @@ export const Reader: React.FC<ReaderProps> = ({
     flat.forEach(c => map.set(c.position, c.title));
     return map;
   }, [book.chapters]);
+
+  // Keep-alive hack for Chrome TTS to prevent event starvation
+  useEffect(() => {
+    if (!isPlaying) return;
+    
+    const interval = setInterval(() => {
+      // Chrome/Chromium has a bug where TTS events stop firing after ~15 seconds.
+      // Pausing and immediately resuming resets the internal timer.
+      if (window.speechSynthesis.speaking && !window.speechSynthesis.paused) {
+        window.speechSynthesis.pause();
+        window.speechSynthesis.resume();
+      }
+    }, 10000); // Run every 10 seconds
+
+    return () => clearInterval(interval);
+  }, [isPlaying]);
 
   // Reset drag offset when settings change externally (e.g. reset button)
   useEffect(() => {
